@@ -1,8 +1,10 @@
 FROM node:22-alpine
 
-# Instalar Docker CLI dentro del contenedor
-RUN apk update && apk add --no-cache docker-cli
+# Instalar dependencias necesarias para Docker CLI
+RUN apk update && \
+    apk add docker-cli docker-cli-buildx bash git
 
-# Crear directorio de trabajo (opcional)
-WORKDIR /app
+# Crear un lugar de trabajo
+WORKDIR /workspace
 
+CMD ["bash"]
