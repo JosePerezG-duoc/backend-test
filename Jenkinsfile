@@ -1,8 +1,8 @@
 pipeline {
   agent {
     docker {
-      image 'node:22'
-      args '-u root:root'
+      image 'joseperezg/node-docker:latest'   // <<< NUEVA IMAGEN CON DOCKER CLI
+      args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
     }
   }
 
@@ -19,21 +19,15 @@ pipeline {
     }
 
     stage('Install dependencies') {
-      steps {
-        sh 'npm ci'
-      }
+      steps { sh 'npm ci' }
     }
 
     stage('Testing') {
-      steps {
-        sh 'npm test'
-      }
+      steps { sh 'npm test' }
     }
 
     stage('Build app') {
-      steps {
-        sh 'npm run build || echo "no build step"'
-      }
+      steps { sh 'npm run build || echo "no build step"' }
     }
 
     stage('Build Docker image') {
