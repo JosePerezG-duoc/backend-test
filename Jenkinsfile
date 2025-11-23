@@ -1,7 +1,7 @@
 pipeline {
   agent {
     docker {
-      image 'joseperezg/node-docker:latest'   // <<< NUEVA IMAGEN CON DOCKER CLI
+      image 'node:22'
       args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
     }
   }
@@ -32,21 +32,23 @@ pipeline {
 
     stage('Build Docker image') {
       steps {
-        script {
-          sh "docker build -t ${DOCKERHUB_REPO}:latest -t ${DOCKERHUB_REPO}:${BUILD_TAG} ."
-          sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:latest"
-          sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:${BUILD_TAG}"
-        }
+        sh """
+          docker build -t ${DOCKERHUB_REPO}:latest -t ${DOCKERHUB_REPO}:${BUILD_TAG} .
+          docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:latest
+          docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:${BUILD_TAG}
+        """
       }
     }
 
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
-          sh "docker push ${DOCKERHUB_REPO}:latest"
-          sh "docker push ${DOCKERHUB_REPO}:${BUILD_TAG}"
-          sh 'docker logout'
+          sh '''
+            echo $DH_PASS | docker login -u $DH_USER --password-stdin
+            docker push ${DOCKERHUB_REPO}:latest
+            docker push ${DOCKERHUB_REPO}:${BUILD_TAG}
+            docker logout
+          '''
         }
       }
     }
@@ -54,10 +56,12 @@ pipeline {
     stage('Push to GitHub Container Registry') {
       steps {
         withCredentials([string(credentialsId: 'github-packages-token', variable: 'GH_TOKEN')]) {
-          sh 'echo $GH_TOKEN | docker login ghcr.io -u TU_GITHUB_USUARIO --password-stdin'
-          sh "docker push ${GHCR_REPO}:latest"
-          sh "docker push ${GHCR_REPO}:${BUILD_TAG}"
-          sh 'docker logout ghcr.io || true'
+          sh '''
+            echo $GH_TOKEN | docker login ghcr.io -u TU_GITHUB_USUARIO --password-stdin
+            docker push ${GHCR_REPO}:latest
+            docker push ${GHCR_REPO}:${BUILD_TAG}
+            docker logout ghcr.io || true
+          '''
         }
       }
     }
@@ -79,14 +83,8 @@ pipeline {
   }
 
   post {
-    always {
-      sh 'docker system prune -af || true'
-    }
-    success {
-      echo "Pipeline finalizado correctamente. Imagen tag: ${BUILD_TAG}"
-    }
-    failure {
-      echo "Pipeline FALLÓ. Revisar logs."
-    }
+    always { sh 'docker system prune -af || true' }
+    success { echo "Pipeline finalizado correctamente. Imagen tag: ${BUILD_TAG}" }
+    failure { echo "Pipeline FALLÓ. Revisar logs." }
   }
 }
