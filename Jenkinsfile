@@ -6,6 +6,15 @@ pipeline {
     GHCR_REPO = "ghcr.io/JosePerezG-duoc/backend-test"   // reemplaza (o docker.pkg.github.com/...)
     BUILD_TAG = "${env.BUILD_NUMBER}"
   }
+  
+  stages{    
+    agent {
+        docker {
+            image 'node:22'
+            args '-u root:root'
+        }
+    }}
+  
 
   stages {
     stage('Checkout') {
