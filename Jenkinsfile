@@ -8,7 +8,7 @@ pipeline {
 
     environment {
         DOCKERHUB_REPO = "joseperezg/backend-test"
-        GHCR_REPO = "ghcr.io/JosePerezG-duoc/backend-test"
+        GHCR_REPO = "ghcr.io/joseperezg-duoc/backend-test"
         BUILD_TAG = "${env.BUILD_NUMBER}"
     }
 
