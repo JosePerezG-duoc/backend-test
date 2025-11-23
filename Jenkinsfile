@@ -1,11 +1,5 @@
 pipeline {
-
-  agent {
-    docker {
-      image 'node:22'
-      args '-u root:root'
-    }
-  }
+  agent any
 
   environment {
     DOCKERHUB_REPO = "joseperezg/backend-test"
@@ -22,20 +16,38 @@ pipeline {
     }
 
     stage('Install dependencies') {
+      agent {
+        docker {
+          image 'node:22'
+          args '-u root:root'
+        }
+      }
       steps {
         sh 'npm ci'
       }
     }
 
     stage('Testing') {
+      agent {
+        docker {
+          image 'node:22'
+          args '-u root:root'
+        }
+      }
       steps {
         sh 'npm test'
       }
     }
 
     stage('Build app') {
+      agent {
+        docker {
+          image 'node:22'
+          args '-u root:root'
+        }
+      }
       steps {
-        sh 'npm run build || echo "no build step"'
+        sh 'npm run build'
       }
     }
 
@@ -50,10 +62,10 @@ pipeline {
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
+          sh "echo $DH_PASS | docker login -u $DH_USER --password-stdin"
           sh "docker push ${DOCKERHUB_REPO}:latest"
           sh "docker push ${DOCKERHUB_REPO}:${BUILD_TAG}"
-          sh 'docker logout'
+          sh "docker logout"
         }
       }
     }
@@ -61,10 +73,10 @@ pipeline {
     stage('Push to GitHub Container Registry') {
       steps {
         withCredentials([string(credentialsId: 'github-packages-token', variable: 'GH_TOKEN')]) {
-          sh 'echo $GH_TOKEN | docker login ghcr.io -u TU_GITHUB_USUARIO --password-stdin'
+          sh "echo $GH_TOKEN | docker login ghcr.io -u JosePerezG-duoc --password-stdin"
           sh "docker push ${GHCR_REPO}:latest"
           sh "docker push ${GHCR_REPO}:${BUILD_TAG}"
-          sh 'docker logout ghcr.io || true'
+          sh "docker logout ghcr.io || true"
         }
       }
     }
@@ -74,7 +86,7 @@ pipeline {
         withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
           sh '''
             export KUBECONFIG=$KUBECONFIG_FILE
-            NAMESPACE=JosePerezG-duoc
+            NAMESPACE=joseperezg
             DEPLOYMENT_NAME=backend-test-deployment
 
             kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
@@ -83,18 +95,11 @@ pipeline {
         }
       }
     }
-
   }
 
   post {
     always {
       sh 'docker system prune -af || true'
-    }
-    success {
-      echo "Pipeline finalizado correctamente. Imagen tag: ${BUILD_TAG}"
-    }
-    failure {
-      echo "Pipeline FALLÓ. Revisar logs."
     }
   }
 }
