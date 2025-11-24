@@ -15,7 +15,9 @@ pipeline {
     stages {
 
         stage('Checkout') {
-            steps { checkout scm }
+            steps {
+                checkout scm
+            }
         }
 
         stage('Install dependencies') {
@@ -67,12 +69,6 @@ pipeline {
         }
 
         stage('Update Kubernetes Deployment') {
-            agent {
-                docker {
-                    image 'bitnami/kubectl:latest'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'
-                }
-            }
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
                     sh '''
@@ -80,8 +76,12 @@ pipeline {
                         NAMESPACE=JosePerezG-duoc
                         DEPLOYMENT_NAME=backend-test-deployment
 
-                        kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
-                        kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
+                        # Ejecutar kubectl dentro de contenedor temporal
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
+
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
                     '''
                 }
             }
