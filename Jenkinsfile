@@ -78,10 +78,10 @@ pipeline {
 
                         # Ejecutar kubectl dentro de contenedor temporal
                         docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
-                            kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
+                            -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
 
                         docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
-                            kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
+                            -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
                     '''
                 }
             }
