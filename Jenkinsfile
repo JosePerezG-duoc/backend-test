@@ -1,21 +1,13 @@
 pipeline {
-    agent {
-        docker {
-            image 'joseperezg/node22-dockercli:latest'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     environment {
-        DH_USER = credentials('dockerhub-username')     // Credenciales Docker Hub
-        DH_PASS = credentials('dockerhub-password')
-        GH_USER = credentials('ghcr-username')         // Credenciales GitHub Container Registry
-        GH_TOKEN = credentials('ghcr-token')
-        KUBECONFIG_FILE = credentials('kubeconfig')    // Kubeconfig para actualizar deployment
-        NAMESPACE = 'JosePerezG-duoc'
+        DOCKER_HUB_USER = 'joseperezg'
+        GHCR_USER       = 'joseperezg-duoc'
+        IMAGE_NAME      = 'backend-test'
+        TAG             = '18'
+        NAMESPACE       = 'JosePerezG-duoc'
         DEPLOYMENT_NAME = 'backend-test-deployment'
-        IMAGE_NAME = 'backend-test'
-        IMAGE_TAG = '18'
     }
 
     stages {
@@ -46,20 +38,20 @@ pipeline {
         stage('Build Docker image') {
             steps {
                 sh """
-                    docker build -t ${DH_USER}/${IMAGE_NAME}:latest -t ${DH_USER}/${IMAGE_NAME}:${IMAGE_TAG} .
-                    docker tag ${DH_USER}/${IMAGE_NAME}:latest ghcr.io/${GH_USER}/${IMAGE_NAME}:latest
-                    docker tag ${DH_USER}/${IMAGE_NAME}:${IMAGE_TAG} ghcr.io/${GH_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG} .
+                    docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest ghcr.io/${GHCR_USER}/${IMAGE_NAME}:latest
+                    docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG}
                 """
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                withCredentials([string(credentialsId: 'docker-hub-password', variable: 'DH_PASS')]) {
                     sh """
-                        echo $PASS | docker login -u $USER --password-stdin
-                        docker push ${DH_USER}/${IMAGE_NAME}:latest
-                        docker push ${DH_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                        echo $DH_PASS | docker login -u ${DOCKER_HUB_USER} --password-stdin
+                        docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                        docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG}
                         docker logout
                     """
                 }
@@ -70,9 +62,9 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'ghcr-token', variable: 'GH_TOKEN')]) {
                     sh """
-                        echo $GH_TOKEN | docker login ghcr.io -u ${GH_USER} --password-stdin
-                        docker push ghcr.io/${GH_USER}/${IMAGE_NAME}:latest
-                        docker push ghcr.io/${GH_USER}/${IMAGE_NAME}:${IMAGE_TAG}
+                        echo $GH_TOKEN | docker login ghcr.io -u ${GHCR_USER} --password-stdin
+                        docker push ghcr.io/${GHCR_USER}/${IMAGE_NAME}:latest
+                        docker push ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG}
                         docker logout ghcr.io
                     """
                 }
@@ -81,11 +73,10 @@ pipeline {
 
         stage('Update Kubernetes Deployment') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KUBECONFIG_FILE')]) {
                     sh """
-                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
-                            kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT_NAME} \
-                            backend=ghcr.io/${GH_USER}/${IMAGE_NAME}:${IMAGE_TAG} --record
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT_NAME} backend=ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG} --record
                     """
                 }
             }
@@ -94,14 +85,12 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up Docker system..."
+            echo 'Cleaning up Docker system...'
             sh 'docker system prune -af'
         }
-
         success {
-            echo 'Pipeline completado correctamente!'
+            echo 'Pipeline completed successfully!'
         }
-
         failure {
             echo 'Pipeline FALLÓ. Revisar logs.'
         }
