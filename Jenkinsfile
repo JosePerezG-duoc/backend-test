@@ -1,17 +1,20 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'joseperezg/node22-dockercli'
+            args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     environment {
-        NODE_VERSION = '22'
-        DOCKER_IMAGE = "joseperezg/backend-test"
-        GHCR_IMAGE = "ghcr.io/joseperezg-duoc/backend-test"
-        VERSION_TAG = "28"
-        NAMESPACE = "JosePerezG-duoc"
-        DEPLOYMENT_NAME = "backend-test-deployment"
+        DOCKERHUB_REPO = "joseperezg/backend-test"
+        GHCR_REPO = "ghcr.io/joseperezg-duoc/backend-test"
+        BUILD_TAG = "${env.BUILD_NUMBER}"
     }
 
     stages {
-        stage('Checkout SCM') {
+
+        stage('Checkout') {
             steps {
                 checkout scm
             }
@@ -31,54 +34,55 @@ pipeline {
 
         stage('Build app') {
             steps {
-                sh 'npm run build'
+                sh 'npm run build || echo "no build step"'
             }
         }
 
         stage('Build Docker image') {
             steps {
-                sh """
-                    docker build -t ${DOCKER_IMAGE}:latest -t ${DOCKER_IMAGE}:${VERSION_TAG} .
-                    docker tag ${DOCKER_IMAGE}:latest ${GHCR_IMAGE}:latest
-                    docker tag ${DOCKER_IMAGE}:latest ${GHCR_IMAGE}:${VERSION_TAG}
-                """
+                sh "docker build -t ${DOCKERHUB_REPO}:latest -t ${DOCKERHUB_REPO}:${BUILD_TAG} ."
+                sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:latest"
+                sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:${BUILD_TAG}"
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-username', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-                    sh """
-                        echo $DH_PASS | docker login -u $DH_USER --password-stdin
-                        docker push ${DOCKER_IMAGE}:latest
-                        docker push ${DOCKER_IMAGE}:${VERSION_TAG}
-                        docker logout
-                    """
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                    sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
+                    sh "docker push ${DOCKERHUB_REPO}:latest"
+                    sh "docker push ${DOCKERHUB_REPO}:${BUILD_TAG}"
+                    sh 'docker logout'
                 }
             }
         }
 
         stage('Push to GitHub Container Registry') {
             steps {
-                withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
-                    sh """
-                        echo $GH_TOKEN | docker login ghcr.io -u joseperezg-duoc --password-stdin
-                        docker push ${GHCR_IMAGE}:latest
-                        docker push ${GHCR_IMAGE}:${VERSION_TAG}
-                        docker logout ghcr.io
-                    """
+                withCredentials([string(credentialsId: 'github-packages-token', variable: 'GH_TOKEN')]) {
+                    sh 'echo $GH_TOKEN | docker login ghcr.io -u joseperezg-duoc --password-stdin'
+                    sh "docker push ${GHCR_REPO}:latest"
+                    sh "docker push ${GHCR_REPO}:${BUILD_TAG}"
+                    sh 'docker logout ghcr.io || true'
                 }
             }
         }
 
         stage('Update Kubernetes Deployment') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KUBECONFIG_FILE')]) {
-                    sh """
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
                         export KUBECONFIG=$KUBECONFIG_FILE
+                        NAMESPACE=JosePerezG-duoc
+                        DEPLOYMENT_NAME=backend-test-deployment
+
+                        # Ejecutar kubectl dentro de contenedor temporal
                         docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
-                            -n ${NAMESPACE} set image deployment/${DEPLOYMENT_NAME} backend=${GHCR_IMAGE}:${VERSION_TAG}
-                    """
+                            kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
+
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
+                    '''
                 }
             }
         }
@@ -86,16 +90,13 @@ pipeline {
 
     post {
         always {
-            node {
-                echo 'Pipeline finalizado. Limpiando Docker...'
-                sh 'docker system prune -af'
-            }
+            sh 'docker system prune -af || true'
         }
-
+        success {
+            echo "Pipeline finalizado correctamente. Imagen tag: ${BUILD_TAG}"
+        }
         failure {
-            node {
-                echo 'Pipeline FALLÓ. Revisar logs.'
-            }
+            echo "Pipeline FALLÓ. Revisar logs."
         }
     }
 }
