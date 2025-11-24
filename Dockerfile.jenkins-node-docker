@@ -1,0 +1,30 @@
+# Base Node 22 Alpine
+FROM node:22-alpine
+
+# Instalar dependencias necesarias para Docker y utilidades
+RUN apk add --no-cache \
+    bash \
+    curl \
+    git \
+    docker-cli \
+    openrc \
+    sudo
+
+# Configurar docker para poder usarlo con Docker-in-Docker
+ENV DOCKER_HOST=unix:///var/run/docker.sock
+
+# Crear un usuario jenkins para ejecutar Jenkins (opcional)
+RUN addgroup -S jenkins && adduser -S jenkins -G jenkins
+
+# Establecer directorio de trabajo
+WORKDIR /home/jenkins/app
+
+# Cambiar a usuario jenkins
+USER jenkins
+
+# Copiar package.json para instalar dependencias si quieres cachear
+# COPY package*.json ./
+# RUN npm ci
+
+# Comando por defecto
+CMD ["bash"]
