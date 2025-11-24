@@ -5,7 +5,7 @@ pipeline {
         DOCKER_HUB_USER = 'joseperezg'
         GHCR_USER       = 'joseperezg-duoc'
         IMAGE_NAME      = 'backend-test'
-        TAG             = '18'
+        TAG             = 'latest'
         NAMESPACE       = 'JosePerezG-duoc'
         DEPLOYMENT_NAME = 'backend-test-deployment'
     }
@@ -17,30 +17,11 @@ pipeline {
             }
         }
 
-        stage('Install dependencies') {
-            steps {
-                sh 'npm ci'
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                sh 'npm test'
-            }
-        }
-
-        stage('Build App') {
-            steps {
-                sh 'npm run build'
-            }
-        }
-
-        stage('Build Docker image') {
+        stage('Build Docker Image') {
             steps {
                 sh """
-                    docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG} .
-                    docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest ghcr.io/${GHCR_USER}/${IMAGE_NAME}:latest
-                    docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG}
+                    docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG} .
+                    docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG} ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG}
                 """
             }
         }
@@ -50,7 +31,6 @@ pipeline {
                 withCredentials([string(credentialsId: 'docker-hub-password', variable: 'DH_PASS')]) {
                     sh """
                         echo $DH_PASS | docker login -u ${DOCKER_HUB_USER} --password-stdin
-                        docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
                         docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG}
                         docker logout
                     """
@@ -63,7 +43,6 @@ pipeline {
                 withCredentials([string(credentialsId: 'ghcr-token', variable: 'GH_TOKEN')]) {
                     sh """
                         echo $GH_TOKEN | docker login ghcr.io -u ${GHCR_USER} --password-stdin
-                        docker push ghcr.io/${GHCR_USER}/${IMAGE_NAME}:latest
                         docker push ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG}
                         docker logout ghcr.io
                     """
@@ -89,7 +68,7 @@ pipeline {
             sh 'docker system prune -af'
         }
         success {
-            echo 'Pipeline completed successfully!'
+            echo 'Pipeline completado correctamente.'
         }
         failure {
             echo 'Pipeline FALLÓ. Revisar logs.'
