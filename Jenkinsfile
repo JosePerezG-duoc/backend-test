@@ -2,18 +2,16 @@ pipeline {
     agent any
 
     environment {
-        DH_USER = credentials('dockerhub-username')
-        DH_PASS = credentials('dockerhub-password')
-        GH_TOKEN = credentials('github-token')
-        KUBECONFIG_FILE = credentials('kubeconfig-file') // archivo kubeconfig subido a Jenkins Credentials
-        NAMESPACE = 'JosePerezG-duoc'
-        DEPLOYMENT_NAME = 'backend-test-deployment'
-        IMAGE_NAME = 'ghcr.io/joseperezg-duoc/backend-test'
-        IMAGE_TAG = '28'
+        NODE_VERSION = '22'
+        DOCKER_IMAGE = "joseperezg/backend-test"
+        GHCR_IMAGE = "ghcr.io/joseperezg-duoc/backend-test"
+        VERSION_TAG = "28"
+        NAMESPACE = "JosePerezG-duoc"
+        DEPLOYMENT_NAME = "backend-test-deployment"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout SCM') {
             steps {
                 checkout scm
             }
@@ -40,20 +38,20 @@ pipeline {
         stage('Build Docker image') {
             steps {
                 sh """
-                    docker build -t joseperezg/backend-test:latest -t joseperezg/backend-test:${IMAGE_TAG} .
-                    docker tag joseperezg/backend-test:latest ${IMAGE_NAME}:latest
-                    docker tag joseperezg/backend-test:latest ${IMAGE_NAME}:${IMAGE_TAG}
+                    docker build -t ${DOCKER_IMAGE}:latest -t ${DOCKER_IMAGE}:${VERSION_TAG} .
+                    docker tag ${DOCKER_IMAGE}:latest ${GHCR_IMAGE}:latest
+                    docker tag ${DOCKER_IMAGE}:latest ${GHCR_IMAGE}:${VERSION_TAG}
                 """
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', passwordVariable: 'DH_PASS', usernameVariable: 'DH_USER')]) {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-username', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
                     sh """
                         echo $DH_PASS | docker login -u $DH_USER --password-stdin
-                        docker push joseperezg/backend-test:latest
-                        docker push joseperezg/backend-test:${IMAGE_TAG}
+                        docker push ${DOCKER_IMAGE}:latest
+                        docker push ${DOCKER_IMAGE}:${VERSION_TAG}
                         docker logout
                     """
                 }
@@ -65,8 +63,8 @@ pipeline {
                 withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
                     sh """
                         echo $GH_TOKEN | docker login ghcr.io -u joseperezg-duoc --password-stdin
-                        docker push ${IMAGE_NAME}:latest
-                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push ${GHCR_IMAGE}:latest
+                        docker push ${GHCR_IMAGE}:${VERSION_TAG}
                         docker logout ghcr.io
                     """
                 }
@@ -75,11 +73,11 @@ pipeline {
 
         stage('Update Kubernetes Deployment') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KUBECONFIG')]) {
+                withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KUBECONFIG_FILE')]) {
                     sh """
-                        export KUBECONFIG=$KUBECONFIG
-                        kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${IMAGE_NAME}:${IMAGE_TAG}
-                        kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            -n ${NAMESPACE} set image deployment/${DEPLOYMENT_NAME} backend=${GHCR_IMAGE}:${VERSION_TAG}
                     """
                 }
             }
@@ -88,11 +86,16 @@ pipeline {
 
     post {
         always {
-            sh 'docker system prune -af'
+            node {
+                echo 'Pipeline finalizado. Limpiando Docker...'
+                sh 'docker system prune -af'
+            }
         }
+
         failure {
-            echo 'Pipeline FALLÓ. Revisar logs.'
+            node {
+                echo 'Pipeline FALLÓ. Revisar logs.'
+            }
         }
     }
 }
-
