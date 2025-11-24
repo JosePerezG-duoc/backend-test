@@ -1,13 +1,19 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'joseperezg/jenkins-node-docker-kubectl:latest'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     environment {
-        DOCKER_HUB_USER = 'joseperezg'
-        GHCR_USER       = 'joseperezg-duoc'
-        IMAGE_NAME      = 'backend-test'
-        TAG             = 'latest'
-        NAMESPACE       = 'JosePerezG-duoc'
-        DEPLOYMENT_NAME = 'backend-test-deployment'
+        DH_USER = credentials('dockerhub-user')
+        DH_PASS = credentials('dockerhub-pass')
+        GH_TOKEN = credentials('ghcr-token')
+        KUBECONFIG_FILE = credentials('kubeconfig')
+        IMAGE_NAME = "backend-test"
+        DH_REPO = "joseperezg/${IMAGE_NAME}"
+        GHCR_REPO = "ghcr.io/joseperezg-duoc/${IMAGE_NAME}"
     }
 
     stages {
@@ -20,19 +26,19 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh """
-                    docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG} .
-                    docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG} ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG}
+                docker build -t ${DH_REPO}:latest .
+                docker tag ${DH_REPO}:latest ${GHCR_REPO}:latest
                 """
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                withCredentials([string(credentialsId: 'docker-hub-password', variable: 'DH_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
                     sh """
-                        echo $DH_PASS | docker login -u ${DOCKER_HUB_USER} --password-stdin
-                        docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:${TAG}
-                        docker logout
+                    echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+                    docker push ${DH_REPO}:latest
+                    docker logout
                     """
                 }
             }
@@ -42,9 +48,9 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'ghcr-token', variable: 'GH_TOKEN')]) {
                     sh """
-                        echo $GH_TOKEN | docker login ghcr.io -u ${GHCR_USER} --password-stdin
-                        docker push ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG}
-                        docker logout ghcr.io
+                    echo "$GH_TOKEN" | docker login ghcr.io -u joseperezg-duoc --password-stdin
+                    docker push ${GHCR_REPO}:latest
+                    docker logout
                     """
                 }
             }
@@ -52,10 +58,10 @@ pipeline {
 
         stage('Update Kubernetes Deployment') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KUBECONFIG_FILE')]) {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
                     sh """
-                        export KUBECONFIG=$KUBECONFIG_FILE
-                        kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT_NAME} backend=ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${TAG} --record
+                    export KUBECONFIG=${KUBECONFIG_FILE}
+                    kubectl -n JosePerezG-duoc set image deployment/${IMAGE_NAME}-deployment backend=${GHCR_REPO}:latest --record
                     """
                 }
             }
@@ -64,14 +70,11 @@ pipeline {
 
     post {
         always {
-            echo 'Cleaning up Docker system...'
+            echo "Cleaning up Docker system..."
             sh 'docker system prune -af'
         }
-        success {
-            echo 'Pipeline completado correctamente.'
-        }
         failure {
-            echo 'Pipeline FALLÓ. Revisar logs.'
+            echo "Pipeline FALLÓ. Revisar logs."
         }
     }
 }
