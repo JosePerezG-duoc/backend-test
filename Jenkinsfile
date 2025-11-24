@@ -58,7 +58,7 @@ pipeline {
         stage('Push to GitHub Container Registry') {
             steps {
                 withCredentials([string(credentialsId: 'github-packages-token', variable: 'GH_TOKEN')]) {
-                    sh 'echo $GH_TOKEN | docker login ghcr.io -u TU_GITHUB_USUARIO --password-stdin'
+                    sh 'echo $GH_TOKEN | docker login ghcr.io -u joseperezg-duoc --password-stdin'
                     sh "docker push ${GHCR_REPO}:latest"
                     sh "docker push ${GHCR_REPO}:${BUILD_TAG}"
                     sh 'docker logout ghcr.io || true'
