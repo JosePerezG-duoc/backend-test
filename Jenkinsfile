@@ -1,68 +1,102 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'joseperezg/node22-dockercli'
+            args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     environment {
-        // Variables globales si necesitas
-        IMAGE_NAME = "joseperezg-duoc/backend-test"
-        IMAGE_TAG = "latest"
+        DOCKERHUB_REPO = "joseperezg/backend-test"
+        GHCR_REPO = "ghcr.io/joseperezg-duoc/backend-test"
+        BUILD_TAG = "${env.BUILD_NUMBER}"
     }
 
     stages {
 
-        stage('Checkout SCM') {
+        stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Build Docker Image') {
-            agent {
-                docker {
-                    image 'joseperezg/jenkins-node-docker-kubectl:latest'
-                    args '-u 0:0 -v /var/run/docker.sock:/var/run/docker.sock'
+        stage('Install dependencies') {
+            steps {
+                sh 'npm ci'
+            }
+        }
+
+        stage('Testing') {
+            steps {
+                sh 'npm test'
+            }
+        }
+
+        stage('Build app') {
+            steps {
+                sh 'npm run build || echo "no build step"'
+            }
+        }
+
+        stage('Build Docker image') {
+            steps {
+                sh "docker build -t ${DOCKERHUB_REPO}:latest -t ${DOCKERHUB_REPO}:${BUILD_TAG} ."
+                sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:latest"
+                sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:${BUILD_TAG}"
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                    sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
+                    sh "docker push ${DOCKERHUB_REPO}:latest"
+                    sh "docker push ${DOCKERHUB_REPO}:${BUILD_TAG}"
+                    sh 'docker logout'
                 }
             }
-            steps {
-                sh 'docker build -t $IMAGE_NAME:$IMAGE_TAG .'
-            }
         }
 
-        stage('Push Docker Image') {
-            agent any
+        stage('Push to GitHub Container Registry') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-user', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-                    sh """
-                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker push $IMAGE_NAME:$IMAGE_TAG
-                        docker logout
-                    """
+                withCredentials([string(credentialsId: 'github-packages-token', variable: 'GH_TOKEN')]) {
+                    sh 'echo $GH_TOKEN | docker login ghcr.io -u joseperezg-duoc --password-stdin'
+                    sh "docker push ${GHCR_REPO}:latest"
+                    sh "docker push ${GHCR_REPO}:${BUILD_TAG}"
+                    sh 'docker logout ghcr.io || true'
                 }
             }
         }
 
-        stage('Other steps if needed') {
+        stage('Update Kubernetes Deployment') {
             steps {
-                echo "Aquí puedes agregar otros pasos como tests o despliegue"
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        NAMESPACE=JosePerezG-duoc
+                        DEPLOYMENT_NAME=backend-test-deployment
+
+                        # Ejecutar kubectl dentro de contenedor temporal
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
+
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
+                    '''
+                }
             }
         }
-
-        stage('Cleanup Docker') {
-            agent any
-            steps {
-                echo "Cleaning up Docker system..."
-                sh 'docker system prune -af || true'
-            }
-        }
-
     }
 
     post {
+        always {
+            sh 'docker system prune -af || true'
+        }
         success {
-            echo "Pipeline finalizó correctamente"
+            echo "Pipeline finalizado correctamente. Imagen tag: ${BUILD_TAG}"
         }
         failure {
-            echo "Pipeline FALLÓ. Revisar logs"
+            echo "Pipeline FALLÓ. Revisar logs."
         }
     }
 }
-
