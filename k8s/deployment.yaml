@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-test-deployment
+  namespace: joseperezg-duoc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-test
+  template:
+    metadata:
+      labels:
+        app: backend-test
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/joseperezg-duoc/backend-test:latest
+          ports:
+            - containerPort: 3000
+          imagePullPolicy: Always
