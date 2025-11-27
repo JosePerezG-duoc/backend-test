@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jperezg
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: jperezg
+data:
+  USERNAME: "jperezg"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+  namespace: jperezg
+type: Opaque
+stringData:
+  API_KEY: "REEMPLAZA_POR_TU_API_KEY"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: jperezg
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend-test
+  template:
+    metadata:
+      labels:
+        app: backend-test
+    spec:
+      containers:
+      - name: backend-test
+        image: ghcr.io/joseperezg-duoc/backend-test:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        env:
+        - name: USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: USERNAME
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secret
+              key: API_KEY
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: jperezg
+spec:
+  selector:
+    app: backend-test
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP

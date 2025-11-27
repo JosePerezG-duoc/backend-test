@@ -1,20 +1,28 @@
-FROM node:22
+# ---------- STAGE 1: Build ----------
+FROM node:22 AS builder
 
 WORKDIR /app
 
-# Copiamos package.json y package-lock.json
 COPY package*.json ./
 
-# Instalamos dependencias
 RUN npm ci
 
-# Copiamos el resto del código
 COPY . .
 
-# Ejecutamos build y tests al construir la imagen
-RUN npm test
+# Generamos build (dist/)
 RUN npm run build
 
-# Comando por defecto al iniciar el contenedor
-CMD ["node", "dist/main.js"]
 
+# ---------- STAGE 2: Runtime ----------
+FROM node:22-slim
+
+WORKDIR /app
+
+# Copiamos solo lo necesario de producción
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copiamos el artefacto compilado desde el builder
+COPY --from=builder /app/dist ./dist
+
+EXP
