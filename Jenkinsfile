@@ -8,17 +8,18 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_USER = "joseperezg"
-        IMAGE_NAME     = "backend-test"
 
-        // Credenciales
-        DOCKERHUB_CRED_ID = "docker-hub-creds"
-        GITHUB_CRED_ID    = "github-packages-token"
-        KUBECONFIG_ID     = "kubeconfig-file"
+        DOCKERHUB_REPO = "joseperezg/backend-test"
+        GHCR_REPO      = "ghcr.io/joseperezg-duoc/backend-test"
 
-        // GHCR
-        GITHUB_USER = "joseperezg-duoc"
-        GHCR_IMAGE  = "ghcr.io/${GITHUB_USER}/${IMAGE_NAME}"
+        DOCKERHUB_CRED = "docker-hub-creds"
+        GHCR_CRED      = "github-packages-token"
+        KUBECONFIG_ID  = "kubeconfig"
+
+        NAMESPACE      = "joseperezg-duoc"
+        DEPLOYMENT     = "backend-test-deployment"
+
+        BUILD_TAG      = "${env.BUILD_NUMBER}"
     }
 
     stages {
@@ -33,29 +34,28 @@ pipeline {
             steps {
                 sh 'npm ci'
                 sh 'npm test'
-                sh 'npm run build || echo "No hay build"'
+                sh 'npm run build || echo "no build command"'
             }
         }
 
         stage('Docker Build') {
             steps {
                 sh """
-                    docker build -t ${DOCKERHUB_USER}/${IMAGE_NAME}:latest .
-                    docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${DOCKERHUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}
-
-                    docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${GHCR_IMAGE}:latest
-                    docker tag ${DOCKERHUB_USER}/${IMAGE_NAME}:latest ${GHCR_IMAGE}:${BUILD_NUMBER}
+                    docker build -t ${DOCKERHUB_REPO}:latest -t ${DOCKERHUB_REPO}:${BUILD_TAG} .
+                    docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:latest
+                    docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:${BUILD_TAG}
                 """
             }
         }
 
         stage('Push to DockerHub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: DOCKERHUB_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: DOCKERHUB_CRED, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
                     sh """
                         echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker push ${DH_USER}/${IMAGE_NAME}:latest
-                        docker push ${DH_USER}/${IMAGE_NAME}:${BUILD_NUMBER}
+                        docker push ${DOCKERHUB_REPO}:latest
+                        docker push ${DOCKERHUB_REPO}:${BUILD_TAG}
+                        docker logout
                     """
                 }
             }
@@ -63,12 +63,12 @@ pipeline {
 
         stage('Push to GHCR') {
             steps {
-                withCredentials([string(credentialsId: GITHUB_CRED_ID, variable: 'GH_PAT')]) {
+                withCredentials([string(credentialsId: GHCR_CRED, variable: 'GH_PAT')]) {
                     sh """
-                        echo "$GH_PAT" | docker login ghcr.io -u ${GITHUB_USER} --password-stdin
-
-                        docker push ${GHCR_IMAGE}:latest
-                        docker push ${GHCR_IMAGE}:${BUILD_NUMBER}
+                        echo "$GH_PAT" | docker login ghcr.io -u joseperezg-duoc --password-stdin
+                        docker push ${GHCR_REPO}:latest
+                        docker push ${GHCR_REPO}:${BUILD_TAG}
+                        docker logout ghcr.io
                     """
                 }
             }
@@ -76,14 +76,15 @@ pipeline {
 
         stage('Deploy to Kubernetes') {
             steps {
-                withCredentials([file(credentialsId: KUBECONFIG_ID, variable: 'KUBECONFIG')]) {
-                    sh """
-                        export KUBECONFIG=$KUBECONFIG
-                        NAMESPACE=JosePerezG-duoc
-                        DEPLOYMENT_NAME=backend-test-deployment
+                withCredentials([file(credentialsId: KUBECONFIG_ID, variable: 'KUBECONFIG_FILE')]) {
 
-                        kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_IMAGE}:${BUILD_NUMBER} --record
-                        kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
+                    sh """
+                        export KUBECONFIG=\$KUBECONFIG_FILE
+
+                        echo "Actualizando deployment en namespace: ${NAMESPACE}"
+
+                        kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT} backend=${GHCR_REPO}:${BUILD_TAG} --record
+                        kubectl -n ${NAMESPACE} rollout status deployment/${DEPLOYMENT} --timeout=120s
                     """
                 }
             }
@@ -92,10 +93,11 @@ pipeline {
 
     post {
         success {
-            echo "✔ Deploy exitoso! Imagen: ${BUILD_NUMBER}"
+            echo "✔ Pipeline finalizado correctamente. Imagen: ${BUILD_TAG}"
         }
         failure {
             echo "❌ Pipeline falló. Revisar logs."
         }
     }
 }
+
