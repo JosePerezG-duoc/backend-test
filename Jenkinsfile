@@ -70,17 +70,19 @@ pipeline {
 
         stage('Update Kubernetes Deployment') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=$KUBECONFIG_FILE
                         NAMESPACE=JosePerezG-duoc
                         DEPLOYMENT_NAME=backend-test-deployment
 
-                        # Ejecutar kubectl dentro de contenedor temporal
-                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                        docker run --rm \
+                            -v $KUBECONFIG:/root/.kube/config \
+                            bitnami/kubectl:latest \
                             -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME backend=${GHCR_REPO}:${BUILD_TAG} --record
 
-                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                        docker run --rm \
+                            -v $KUBECONFIG:/root/.kube/config \
+                            bitnami/kubectl:latest \
                             -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
                     '''
                 }
