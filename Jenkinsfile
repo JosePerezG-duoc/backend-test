@@ -1,26 +1,24 @@
 pipeline {
+
     agent {
         docker {
-            image 'joseperezg/node22-dockercli'  // Imagen base con Node y Docker
+            image 'joseperezg/node22-dockercli'
             args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
         }
     }
 
     environment {
-        // Repositorios
+
         DOCKERHUB_REPO = "joseperezg/backend-test"
         GHCR_REPO      = "ghcr.io/joseperezg-duoc/backend-test"
 
-        // Credenciales en Jenkins
         DOCKERHUB_CRED = "docker-hub-creds"
         GHCR_CRED      = "github-packages-token"
         KUBECONFIG_ID  = "kubeconfig"
 
-        // Kubernetes
-        NAMESPACE      = "jperezg"
+        NAMESPACE      = "joseperezg-duoc"
         DEPLOYMENT     = "backend-test-deployment"
 
-        // Build tag
         BUILD_TAG      = "${env.BUILD_NUMBER}"
     }
 
@@ -36,7 +34,7 @@ pipeline {
             steps {
                 sh 'npm ci'
                 sh 'npm test'
-                sh 'npm run build || echo "No build command configured"'
+                sh 'npm run build || echo "no build command"'
             }
         }
 
@@ -79,34 +77,27 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 withCredentials([file(credentialsId: KUBECONFIG_ID, variable: 'KUBECONFIG_FILE')]) {
+
                     sh """
-                        export KUBECONFIG=\\$KUBECONFIG_FILE
-
-                        echo "Descargando kubectl..."
-                        STABLE_VERSION=\\$(curl -L -s https://dl.k8s.io/release/stable.txt)
-                        curl -LO https://dl.k8s.io/release/\\$STABLE_VERSION/bin/linux/amd64/kubectl
-                        chmod +x kubectl
-                        mv kubectl /usr/local/bin/
-
-                        echo "Aplicando namespace si no existe..."
-                        kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
+                        export KUBECONFIG=\$KUBECONFIG_FILE
 
                         echo "Actualizando deployment en namespace: ${NAMESPACE}"
+
                         kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT} backend=${GHCR_REPO}:${BUILD_TAG} --record
                         kubectl -n ${NAMESPACE} rollout status deployment/${DEPLOYMENT} --timeout=120s
                     """
                 }
             }
         }
-
     }
 
     post {
         success {
-            echo "✔ Pipeline finalizado correctamente. Imagen build: ${BUILD_TAG}"
+            echo "✔ Pipeline finalizado correctamente. Imagen: ${BUILD_TAG}"
         }
         failure {
             echo "❌ Pipeline falló. Revisar logs."
         }
     }
 }
+
