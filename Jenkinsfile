@@ -8,13 +8,12 @@ pipeline {
     }
 
     environment {
-
         DOCKERHUB_REPO = "joseperezg/backend-test"
         GHCR_REPO      = "ghcr.io/joseperezg-duoc/backend-test"
 
         DOCKERHUB_CRED = "docker-hub-creds"
         GHCR_CRED      = "github-packages-token"
-        KUBECONFIG_ID  = "kubeconfig"
+        KUBECONFIG_ID  = "kubeconfig"  // Solo el archivo config
 
         NAMESPACE      = "jperezg-duoc"
         DEPLOYMENT     = "backend-test-deployment"
@@ -80,23 +79,12 @@ pipeline {
                     sh """
                         export KUBECONFIG=\$KUBECONFIG_FILE
 
+                        echo "Validando conexión a Kubernetes..."
+                        kubectl get ns
+
                         echo "Actualizando deployment en namespace: ${NAMESPACE}"
-
-                        # Actualiza la imagen del contenedor correcto
-                        docker run --rm -i --network host \
-                            -v \$KUBECONFIG:/kubeconfig:ro \
-                            -v /home/jperezg/.minikube:/home/jperezg/.minikube:ro \
-                            -e KUBECONFIG=/kubeconfig \
-                            bitnami/kubectl:latest \
-                            set image deployment/${DEPLOYMENT} backend-test=${GHCR_REPO}:${BUILD_TAG} -n ${NAMESPACE}
-
-                        # Espera a que el rollout termine
-                        docker run --rm -i --network host \
-                            -v \$KUBECONFIG:/kubeconfig:ro \
-                            -v /home/jperezg/.minikube:/home/jperezg/.minikube:ro \
-                            -e KUBECONFIG=/kubeconfig \
-                            bitnami/kubectl:latest \
-                            rollout status deployment/${DEPLOYMENT} -n ${NAMESPACE} --timeout=120s
+                        kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT} backend-test=${GHCR_REPO}:${BUILD_TAG}
+                        kubectl -n ${NAMESPACE} rollout status deployment/${DEPLOYMENT} --timeout=120s
                     """
                 }
             }
