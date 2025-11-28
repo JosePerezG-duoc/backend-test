@@ -16,7 +16,7 @@ pipeline {
         GHCR_CRED      = "github-packages-token"
         KUBECONFIG_ID  = "kubeconfig"
 
-        NAMESPACE      = "joseperezg-duoc"
+        NAMESPACE      = "jperezg-duoc"
         DEPLOYMENT     = "backend-test-deployment"
 
         BUILD_TAG      = "${env.BUILD_NUMBER}"
@@ -77,14 +77,26 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 withCredentials([file(credentialsId: KUBECONFIG_ID, variable: 'KUBECONFIG_FILE')]) {
-
                     sh """
                         export KUBECONFIG=\$KUBECONFIG_FILE
 
                         echo "Actualizando deployment en namespace: ${NAMESPACE}"
 
-                        kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT} backend=${GHCR_REPO}:${BUILD_TAG} --record
-                        kubectl -n ${NAMESPACE} rollout status deployment/${DEPLOYMENT} --timeout=120s
+                        # Actualiza la imagen del contenedor correcto
+                        docker run --rm -i --network host \
+                            -v \$KUBECONFIG:/kubeconfig:ro \
+                            -v /home/jperezg/.minikube:/home/jperezg/.minikube:ro \
+                            -e KUBECONFIG=/kubeconfig \
+                            bitnami/kubectl:latest \
+                            set image deployment/${DEPLOYMENT} backend-test=${GHCR_REPO}:${BUILD_TAG} -n ${NAMESPACE}
+
+                        # Espera a que el rollout termine
+                        docker run --rm -i --network host \
+                            -v \$KUBECONFIG:/kubeconfig:ro \
+                            -v /home/jperezg/.minikube:/home/jperezg/.minikube:ro \
+                            -e KUBECONFIG=/kubeconfig \
+                            bitnami/kubectl:latest \
+                            rollout status deployment/${DEPLOYMENT} -n ${NAMESPACE} --timeout=120s
                     """
                 }
             }
@@ -100,4 +112,3 @@ pipeline {
         }
     }
 }
-
