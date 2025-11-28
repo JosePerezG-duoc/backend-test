@@ -23,7 +23,7 @@ stringData:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend-deployment
+  name: backend-test-deployment
   namespace: jperezg
 spec:
   replicas: 3
