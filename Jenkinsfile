@@ -17,7 +17,7 @@ pipeline {
         KUBECONFIG_ID  = "kubeconfig"
 
         // Kubernetes
-        NAMESPACE      = "joseperezg-duoc"
+        NAMESPACE      = "jperezg"
         DEPLOYMENT     = "backend-test-deployment"
 
         // Build tag
@@ -80,10 +80,10 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: KUBECONFIG_ID, variable: 'KUBECONFIG_FILE')]) {
                     sh """
-                        export KUBECONFIG=\$KUBECONFIG_FILE
+                        export KUBECONFIG=\\$KUBECONFIG_FILE
 
                         echo "Instalando kubectl..."
-                        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                        curl -LO "https://dl.k8s.io/release/\\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
                         chmod +x kubectl
                         mv kubectl /usr/local/bin/
 
