@@ -60,7 +60,7 @@ pipeline {
 
         stage('Deploy to Minikube') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                withCredentials([file(credentialsId: 'kubeconfig-jenkins', variable: 'KUBECONFIG_FILE')]) {
                     sh """
                         echo "Usando kubeconfig: $KUBECONFIG_FILE"
                         
