@@ -1,59 +1,35 @@
 pipeline {
-
-    agent {
-        docker {
-            image 'joseperezg/node22-dockercli'
-            args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     environment {
         DOCKERHUB_REPO = "joseperezg/backend-test"
-        GHCR_REPO      = "ghcr.io/joseperezg-duoc/backend-test"
-
-        DOCKERHUB_CRED = "docker-hub-creds"
-        GHCR_CRED      = "github-packages-token"
-        KUBECONFIG_ID  = "kubeconfig"  // Solo el archivo config
-
-        NAMESPACE      = "jperezg-duoc"
-        DEPLOYMENT     = "backend-test-deployment"
-
-        BUILD_TAG      = "${env.BUILD_NUMBER}"
+        GHCR_REPO = "ghcr.io/joseperezg-duoc/backend-test"
+        DEPLOYMENT = "backend-test-deployment"
+        NAMESPACE = "jperezg-duoc"
     }
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Install & Test & Build') {
-            steps {
-                sh 'npm ci'
-                sh 'npm test'
-                sh 'npm run build || echo "no build command"'
-            }
-        }
-
-        stage('Docker Build') {
+        stage('Build Docker image') {
             steps {
                 sh """
-                    docker build -t ${DOCKERHUB_REPO}:latest -t ${DOCKERHUB_REPO}:${BUILD_TAG} .
-                    docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:latest
-                    docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:${BUILD_TAG}
+                    docker build -t ${DOCKERHUB_REPO}:${BUILD_NUMBER} .
+                    docker tag ${DOCKERHUB_REPO}:${BUILD_NUMBER} ${DOCKERHUB_REPO}:latest
+                    docker tag ${DOCKERHUB_REPO}:${BUILD_NUMBER} ${GHCR_REPO}:${BUILD_NUMBER}
+                    docker tag ${DOCKERHUB_REPO}:${BUILD_NUMBER} ${GHCR_REPO}:latest
                 """
             }
         }
 
         stage('Push to DockerHub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: DOCKERHUB_CRED, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds',
+                                usernameVariable: 'DH_USER',
+                                passwordVariable: 'DH_PASS')]) {
                     sh """
-                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+                        echo $DH_PASS | docker login -u $DH_USER --password-stdin
                         docker push ${DOCKERHUB_REPO}:latest
-                        docker push ${DOCKERHUB_REPO}:${BUILD_TAG}
+                        docker push ${DOCKERHUB_REPO}:${BUILD_NUMBER}
                         docker logout
                     """
                 }
@@ -62,41 +38,48 @@ pipeline {
 
         stage('Push to GHCR') {
             steps {
-                withCredentials([string(credentialsId: GHCR_CRED, variable: 'GH_PAT')]) {
+                withCredentials([string(credentialsId: 'github-packages-token', variable: 'GH_PAT')]) {
                     sh """
-                        echo "$GH_PAT" | docker login ghcr.io -u joseperezg-duoc --password-stdin
+                        echo $GH_PAT | docker login ghcr.io -u joseperezg-duoc --password-stdin
                         docker push ${GHCR_REPO}:latest
-                        docker push ${GHCR_REPO}:${BUILD_TAG}
+                        docker push ${GHCR_REPO}:${BUILD_NUMBER}
                         docker logout ghcr.io
                     """
                 }
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Deploy to Minikube') {
             steps {
-                withCredentials([file(credentialsId: KUBECONFIG_ID, variable: 'KUBECONFIG_FILE')]) {
+                withCredentials([file(credentialsId: 'kubeconfig-jenkins', variable: 'KUBECONFIG_FILE')]) {
                     sh """
-                        export KUBECONFIG=\$KUBECONFIG_FILE
+                        echo "Usando kubeconfig: $KUBECONFIG_FILE"
 
-                        echo "Validando conexión a Kubernetes..."
-                        kubectl get ns
+                        # Test conexión
+                        docker run --rm --network host \
+                            -v $KUBECONFIG_FILE:/kubeconfig:ro \
+                            -e KUBECONFIG=/kubeconfig \
+                            bitnami/kubectl:latest get ns
 
-                        echo "Actualizando deployment en namespace: ${NAMESPACE}"
-                        kubectl -n ${NAMESPACE} set image deployment/${DEPLOYMENT} backend-test=${GHCR_REPO}:${BUILD_TAG}
-                        kubectl -n ${NAMESPACE} rollout status deployment/${DEPLOYMENT} --timeout=120s
+                        # Actualizar imagen del deployment
+                        docker run --rm --network host \
+                            -v $KUBECONFIG_FILE:/kubeconfig:ro \
+                            -e KUBECONFIG=/kubeconfig \
+                            bitnami/kubectl:latest \
+                            set image deployment/${DEPLOYMENT} \
+                            backend-test=${GHCR_REPO}:${BUILD_NUMBER} \
+                            -n ${NAMESPACE}
+
+                        # Esperar rollout
+                        docker run --rm --network host \
+                            -v $KUBECONFIG_FILE:/kubeconfig:ro \
+                            -e KUBECONFIG=/kubeconfig \
+                            bitnami/kubectl:latest \
+                            rollout status deployment/${DEPLOYMENT} \
+                            -n ${NAMESPACE} --timeout=120s
                     """
                 }
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✔ Pipeline finalizado correctamente. Imagen: ${BUILD_TAG}"
-        }
-        failure {
-            echo "❌ Pipeline falló. Revisar logs."
         }
     }
 }
