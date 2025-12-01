@@ -71,24 +71,19 @@ pipeline {
         stage('Update Kubernetes Deployment') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
-                    sh """
-                        echo "Usando kubeconfig: ${KUBECONFIG_FILE}"
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        NAMESPACE=jperezg-duoc
+                        DEPLOYMENT_NAME=backend-test-deployment
+                        CONTAINER_NAME=backend-test
 
-                        # Se ejecuta kubectl usando el archivo kubeconfig montado correctamente
-                        docker run --rm \
-                            -v ${KUBECONFIG_FILE}:/root/.kube/config \
-                            bitnami/kubectl:latest \
-                            --kubeconfig=/root/.kube/config \
-                            -n JosePerezG-duoc \
-                            set image deployment/backend-test-deployment backend=${GHCR_REPO}:${BUILD_TAG} --record
+                        # Ejecutar kubectl dentro del contenedor temporal
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            kubectl -n $NAMESPACE set image deployment/$DEPLOYMENT_NAME $CONTAINER_NAME=${GHCR_REPO}:${BUILD_TAG} --record
 
-                        docker run --rm \
-                            -v ${KUBECONFIG_FILE}:/root/.kube/config \
-                            bitnami/kubectl:latest \
-                            --kubeconfig=/root/.kube/config \
-                            -n JosePerezG-duoc \
-                            rollout status deployment/backend-test-deployment --timeout=120s
-                    """
+                        docker run --rm -v $KUBECONFIG:/root/.kube/config bitnami/kubectl:latest \
+                            kubectl -n $NAMESPACE rollout status deployment/$DEPLOYMENT_NAME --timeout=120s
+                    '''
                 }
             }
         }
