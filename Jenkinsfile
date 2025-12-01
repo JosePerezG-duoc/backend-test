@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
-        GHCR_TOKEN = credentials('ghcr-token')
+        DOCKERHUB_CREDENTIALS = credentials('docker-hub-creds')
+        GHCR_TOKEN = credentials('github-packages-token')
         IMAGE_NAME = "backend-test"
         GHCR_NAMESPACE = "joseperezg-duoc"   // <--- CORREGIDO: todo minúscula
     }
