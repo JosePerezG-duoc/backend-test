@@ -1,11 +1,15 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'joseperezg/node22-dockercli'
+            args '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('docker-hub-creds')
-        GHCR_TOKEN = credentials('github-packages-token')
-        IMAGE_NAME = "backend-test"
-        GHCR_NAMESPACE = "joseperezg-duoc"   // <--- CORREGIDO: todo minúscula
+        DOCKERHUB_REPO = "joseperezg/backend-test"
+        GHCR_REPO = "ghcr.io/joseperezg-duoc/backend-test"
+        BUILD_TAG = "${env.BUILD_NUMBER}"
     }
 
     stages {
@@ -16,57 +20,89 @@ pipeline {
             }
         }
 
+        stage('Install dependencies') {
+            steps {
+                sh 'npm ci'
+            }
+        }
+
+        stage('Testing') {
+            steps {
+                sh 'npm test'
+            }
+        }
+
+        stage('Build app') {
+            steps {
+                sh 'npm run build || echo "no build step"'
+            }
+        }
+
         stage('Build Docker image') {
             steps {
-                script {
-                    COMMIT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-
-                    sh """
-                    docker build -t ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:${COMMIT} .
-                    docker tag ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:${COMMIT} ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    docker tag ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:${COMMIT} ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:${COMMIT}
-                    docker tag ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:${COMMIT} ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:latest
-                    """
-                }
+                sh "docker build -t ${DOCKERHUB_REPO}:latest -t ${DOCKERHUB_REPO}:${BUILD_TAG} ."
+                sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:latest"
+                sh "docker tag ${DOCKERHUB_REPO}:latest ${GHCR_REPO}:${BUILD_TAG}"
             }
         }
 
-        stage('Push to DockerHub') {
+        stage('Push to Docker Hub') {
             steps {
-                script {
-                    sh """
-                    echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
-                    docker push ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:${COMMIT}
-                    docker push ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    docker logout
-                    """
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                    sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
+                    sh "docker push ${DOCKERHUB_REPO}:latest"
+                    sh "docker push ${DOCKERHUB_REPO}:${BUILD_TAG}"
+                    sh 'docker logout'
                 }
             }
         }
 
-        stage('Push to GHCR') {
+        stage('Push to GitHub Container Registry') {
             steps {
-                script {
-                    sh """
-                    echo ${GHCR_TOKEN} | docker login ghcr.io -u ${GHCR_NAMESPACE} --password-stdin
-                    docker push ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:${COMMIT}
-                    docker push ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:latest
-                    docker logout ghcr.io
-                    """
+                withCredentials([string(credentialsId: 'github-packages-token', variable: 'GH_TOKEN')]) {
+                    sh 'echo $GH_TOKEN | docker login ghcr.io -u joseperezg-duoc --password-stdin'
+                    sh "docker push ${GHCR_REPO}:latest"
+                    sh "docker push ${GHCR_REPO}:${BUILD_TAG}"
+                    sh 'docker logout ghcr.io || true'
                 }
             }
         }
 
-        stage('Deploy to Minikube') {
+        stage('Update Kubernetes Deployment') {
             steps {
-                script {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
                     sh """
-                    kubectl set image deployment/backend-test backend-test=ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:${COMMIT} --record
-                    kubectl rollout status deployment/backend-test
+                        echo "Usando kubeconfig: ${KUBECONFIG_FILE}"
+
+                        # Se ejecuta kubectl usando el archivo kubeconfig montado correctamente
+                        docker run --rm \
+                            -v ${KUBECONFIG_FILE}:/root/.kube/config \
+                            bitnami/kubectl:latest \
+                            --kubeconfig=/root/.kube/config \
+                            -n JosePerezG-duoc \
+                            set image deployment/backend-test-deployment backend=${GHCR_REPO}:${BUILD_TAG} --record
+
+                        docker run --rm \
+                            -v ${KUBECONFIG_FILE}:/root/.kube/config \
+                            bitnami/kubectl:latest \
+                            --kubeconfig=/root/.kube/config \
+                            -n JosePerezG-duoc \
+                            rollout status deployment/backend-test-deployment --timeout=120s
                     """
                 }
             }
         }
+    }
 
+    post {
+        always {
+            sh 'docker system prune -af || true'
+        }
+        success {
+            echo "Pipeline finalizado correctamente. Imagen tag: ${BUILD_TAG}"
+        }
+        failure {
+            echo "Pipeline FALLÓ. Revisar logs."
+        }
     }
 }
