@@ -4,7 +4,7 @@ pipeline {
     environment {
         IMAGE_NAME = "backend-test"
         DOCKERHUB_USER = "joseperezg"
-        GHCR_USER = "joseperezg-duoc"
+        GHCR_USER = "JosePerezG-duoc"   // ← CORREGIDO
     }
 
     stages {
@@ -67,12 +67,12 @@ pipeline {
                         docker run --rm --network host \
                             -v $KUBECONFIG_FILE:/kubeconfig:ro \
                             -e KUBECONFIG=/kubeconfig \
-                            bitnami/kubectl:latest set image deployment/${IMAGE_NAME} ${IMAGE_NAME}=ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${IMAGE_TAG} --namespace=default
+                            bitnami/kubectl:latest set image deployment/backend-test-deployment backend-test=ghcr.io/${GHCR_USER}/${IMAGE_NAME}:${IMAGE_TAG} --namespace=jperezg-duoc
 
                         docker run --rm --network host \
                             -v $KUBECONFIG_FILE:/kubeconfig:ro \
                             -e KUBECONFIG=/kubeconfig \
-                            bitnami/kubectl:latest rollout status deployment/${IMAGE_NAME} --namespace=default
+                            bitnami/kubectl:latest rollout status deployment/backend-test-deployment --namespace=jperezg-duoc
                     """
                 }
             }
