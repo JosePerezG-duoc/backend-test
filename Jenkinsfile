@@ -48,7 +48,7 @@ pipeline {
             steps {
                 script {
                     sh """
-                    echo ${GHCR_TOKEN_PSW} | docker login ghcr.io -u ${GHCR_NAMESPACE} --password-stdin
+                    echo ${GHCR_TOKEN} | docker login ghcr.io -u ${GHCR_NAMESPACE} --password-stdin
                     docker push ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:${COMMIT}
                     docker push ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:latest
                     docker logout ghcr.io
